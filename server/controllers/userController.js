@@ -3,15 +3,28 @@ import Course from "../models/Course.js";
 import { Purchase } from "../models/Purchase.js";
 import User from "../models/User.js";
 import { CourseProgress } from "../models/CourseProgress.js";
+import { clerkClient } from "@clerk/express";
 
-// Get User Data
+// Get User Data (self-healing: agar Clerk webhook miss ho gaya ho to yahan se sync ho jayega)
 export const getUserData = async (req, res) => {
   try {
     const userId = req.auth.userId;
-    const user = await User.findById(userId);
+    let user = await User.findById(userId);
 
     if (!user) {
-      return res.json({ success: false, message: "User Not Found" });
+      const clerkUser = await clerkClient.users.getUser(userId);
+      const primaryEmail = clerkUser.emailAddresses?.[0]?.emailAddress || "";
+
+      user = await User.create({
+        _id: clerkUser.id,
+        name:
+          `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() ||
+          "User",
+        email: primaryEmail,
+        imageUrl: clerkUser.imageUrl || "",
+      });
+
+      console.log("Self-healed missing user in MongoDB:", userId);
     }
 
     res.json({ success: true, user });
